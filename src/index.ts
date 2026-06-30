@@ -1,5 +1,6 @@
 import express from "express";
 import dotenv from "dotenv";
+import { conectarBaseDatos } from "./config/database.js";
 
 dotenv.config();
 
@@ -13,6 +14,9 @@ app.get("/health", (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
+
+// Conectar a la base de datos
+conectarBaseDatos();
 
 app.listen(PORT, () => {
     console.log(`DevBrain backend running on port ${PORT}`);
