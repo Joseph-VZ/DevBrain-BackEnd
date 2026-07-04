@@ -1,15 +1,20 @@
 import { Request, Response, NextFunction } from "express";
 import jwt from "jsonwebtoken";
 
-const JWT_SECRET = process.env.JWT_SECRET!;
-
 export const authMiddleware = (
     req: Request,
     res: Response,
     next: NextFunction
 ) => {
     try {
+        const JWT_SECRET = process.env.JWT_SECRET;
         const authHeader = req.headers.authorization;
+
+        if (!JWT_SECRET) {
+            return res.status(500).json({
+                error: "JWT_SECRET no configurado"
+            });
+        }
 
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json({
@@ -26,7 +31,7 @@ export const authMiddleware = (
 
     } catch (error) {
         return res.status(401).json({
-            error: "Token inválido o expirado"
+            error: "Token invalido o expirado"
         });
     }
 };
