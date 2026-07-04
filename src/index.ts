@@ -3,23 +3,22 @@ dotenv.config();
 
 import express from "express";
 import { conectarBaseDatos } from "./config/database.js";
-import authRoutes from "./routes/auth.routes.js"; // <-- Agregar
+import authRoutes from "./routes/auth.routes.js";
+import projectRoutes from "./routes/project.routes.js";
 
 const app = express();
 
 app.use(express.json());
 
-// Registrar rutas de autenticación
 app.use("/auth", authRoutes);
+app.use("/projects", projectRoutes);
 
-// HEALTH CHECK
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
 });
 
 const PORT = process.env.PORT || 3000;
 
-// Conectar a la base de datos
 conectarBaseDatos();
 
 app.listen(PORT, () => {

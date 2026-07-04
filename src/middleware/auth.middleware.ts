@@ -11,7 +11,6 @@ export const authMiddleware = (
     try {
         const authHeader = req.headers.authorization;
 
-        // Verifica que exista el header y tenga el formato correcto
         if (!authHeader || !authHeader.startsWith("Bearer ")) {
             return res.status(401).json({
                 error: "Token requerido"
@@ -19,8 +18,6 @@ export const authMiddleware = (
         }
 
         const token = authHeader.split(" ")[1];
-
-        // Verifica firma y expiración del JWT
         const decoded = jwt.verify(token, JWT_SECRET);
 
         (req as any).user = decoded;
