@@ -16,5 +16,6 @@
     "exactOptionalPropertyTypes": false,
 
     "verbatimModuleSyntax": false
-  }
+  },
+  "include": ["src/**/*.ts"]
 }
