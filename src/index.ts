@@ -5,6 +5,7 @@ import express from "express";
 import { conectarBaseDatos } from "./config/database.js";
 import authRoutes from "./routes/auth.routes.js";
 import projectRoutes from "./routes/project.routes.js";
+import decisionRoutes from "./routes/decision.routes.js";
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 
 app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
+app.use("/decisions", decisionRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
