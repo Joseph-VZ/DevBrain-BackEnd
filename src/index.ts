@@ -7,6 +7,7 @@ import authRoutes from "./routes/auth.routes.js";
 import projectRoutes from "./routes/project.routes.js";
 import decisionRoutes from "./routes/decision.routes.js";
 import voteRoutes from "./routes/vote.routes.js";
+import aiRoutes from "./routes/ai.routes.js";
 
 const app = express();
 
@@ -16,6 +17,7 @@ app.use("/auth", authRoutes);
 app.use("/projects", projectRoutes);
 app.use("/decisions", decisionRoutes);
 app.use("/votes", voteRoutes);
+app.use("/ai", aiRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
