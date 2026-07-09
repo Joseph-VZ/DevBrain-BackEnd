@@ -8,6 +8,7 @@ import projectRoutes from "./routes/project.routes.js";
 import decisionRoutes from "./routes/decision.routes.js";
 import voteRoutes from "./routes/vote.routes.js";
 import invitationRoutes from "./routes/invitation.routes.js";
+import aiRoutes from "./routes/ai.routes.js";
 
 const app = express();
 
@@ -18,6 +19,7 @@ app.use("/projects", projectRoutes);
 app.use("/decisions", decisionRoutes);
 app.use("/votes", voteRoutes);
 app.use("/invitations", invitationRoutes);
+app.use("/ai", aiRoutes);
 
 app.get("/health", (req, res) => {
     res.json({ status: "ok" });
