@@ -6,6 +6,89 @@ const voteMap: Record<string, string> = {
     reject: "rechazar"
 };
 
+// Mapeo inverso: DB (español) -> API (inglés)
+const reverseVoteMap: Record<string, string> = {
+    aprobar: "approve",
+    rechazar: "reject"
+};
+
+/* =========================
+   GET VOTES
+   Devuelve el conteo de votos de una decisión y el voto del usuario actual.
+========================= */
+export const getVotes = async (req: Request, res: Response) => {
+
+    try {
+
+        const { decisionId } = req.query;
+        const userId = (req as any).user.id;
+
+        if (!decisionId) {
+            return res.status(400).json({
+                error: "decisionId es obligatorio"
+            });
+        }
+
+        const pool = obtenerPool();
+
+        const decision = await pool.query(
+            `SELECT id FROM decisiones WHERE id = $1`,
+            [decisionId]
+        );
+
+        if (decision.rows.length === 0) {
+            return res.status(404).json({
+                error: "La decisión no existe"
+            });
+        }
+
+        const countResult = await pool.query(
+            `
+            SELECT voto, COUNT(*)::int AS total
+            FROM votos
+            WHERE decision_id = $1
+            GROUP BY voto
+            `,
+            [decisionId]
+        );
+
+        const counts: Record<string, number> = { approve: 0, reject: 0 };
+
+        for (const row of countResult.rows) {
+            const apiVote = reverseVoteMap[row.voto];
+            if (apiVote) {
+                counts[apiVote] = row.total;
+            }
+        }
+
+        const myVoteResult = await pool.query(
+            `
+            SELECT voto
+            FROM votos
+            WHERE decision_id = $1 AND usuario_id = $2
+            `,
+            [decisionId, userId]
+        );
+
+        const myVote = myVoteResult.rows.length > 0
+            ? reverseVoteMap[myVoteResult.rows[0].voto] ?? null
+            : null;
+
+        return res.json({
+            decisionId: Number(decisionId),
+            approve: counts.approve,
+            reject: counts.reject,
+            total: counts.approve + counts.reject,
+            myVote
+        });
+
+    } catch (error) {
+        return res.status(500).json({
+            error: "Error al obtener los votos"
+        });
+    }
+};
+
 export const postVote = async (req: Request, res: Response) => {
 
     const client = await obtenerPool().connect();
