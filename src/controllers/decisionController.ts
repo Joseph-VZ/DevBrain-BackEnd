@@ -162,7 +162,7 @@ export const getDecisions = async (req: Request, res: Response) => {
 
     try {
 
-        const { projectId } = req.query;
+        const { projectId, q } = req.query;
         const userId = (req as any).user.id;
 
         if (!projectId) {
@@ -201,72 +201,97 @@ export const getDecisions = async (req: Request, res: Response) => {
 
         /* =========================
            Obtener decisiones
+           Incluye alternativas, conteo de votos y búsqueda opcional (q).
         ========================= */
+
+        const params: any[] = [projectId];
+        let searchFilter = "";
+
+        if (q && String(q).trim() !== "") {
+            params.push(`%${String(q).trim()}%`);
+            searchFilter = `
+                AND (
+                    d.titulo ILIKE $${params.length}
+                    OR d.descripcion ILIKE $${params.length}
+                    OR EXISTS (
+                        SELECT 1 FROM alternativas_decision a2
+                        WHERE a2.decision_id = d.id
+                        AND a2.nombre ILIKE $${params.length}
+                    )
+                )
+            `;
+        }
 
         const result = await pool.query(
             `
             SELECT
 
                 d.id,
-
                 d.proyecto_id,
-
                 d.usuario_proponente_id,
-
                 d.titulo,
-
                 d.descripcion,
-
+                d.estado,
                 d.fecha_creacion,
 
                 COALESCE(
-
-                    json_agg(ad.nombre)
+                    json_agg(DISTINCT ad.nombre)
                     FILTER (WHERE ad.id IS NOT NULL),
-
                     '[]'
+                ) AS alternatives,
 
-                ) AS alternatives
+                COUNT(DISTINCT v.id) FILTER (WHERE v.voto = 'aprobar')::int  AS votes_approve,
+                COUNT(DISTINCT v.id) FILTER (WHERE v.voto = 'rechazar')::int AS votes_reject
 
             FROM decisiones d
 
             LEFT JOIN alternativas_decision ad
-
                 ON d.id = ad.decision_id
 
+            LEFT JOIN votos v
+                ON d.id = v.decision_id
+
             WHERE d.proyecto_id = $1
+            ${searchFilter}
 
             GROUP BY
-
                 d.id,
                 d.proyecto_id,
                 d.usuario_proponente_id,
                 d.titulo,
                 d.descripcion,
+                d.estado,
                 d.fecha_creacion
 
             ORDER BY d.fecha_creacion DESC
             `,
-            [projectId]
+            params
         );
 
-        const decisions = result.rows.map(decision => ({
+        const decisions = result.rows.map(decision => {
 
-            id: decision.id,
+            const approve = decision.votes_approve;
+            const reject = decision.votes_reject;
 
-            projectId: decision.proyecto_id,
+            // El estado se deriva de los votos cuando aún está "pendiente".
+            let status = decision.estado;
+            if (status === "pendiente") {
+                if (approve > reject) status = "aprobada";
+                else if (reject > approve) status = "rechazada";
+            }
 
-            title: decision.titulo,
-
-            description: decision.descripcion,
-
-            alternatives: decision.alternatives,
-
-            proposedBy: decision.usuario_proponente_id,
-
-            createdAt: decision.fecha_creacion
-
-        }));
+            return {
+                id: decision.id,
+                projectId: decision.proyecto_id,
+                title: decision.titulo,
+                description: decision.descripcion,
+                alternatives: decision.alternatives,
+                proposedBy: decision.usuario_proponente_id,
+                status,
+                votes: { approve, reject, total: approve + reject },
+                createdAt: decision.fecha_creacion
+            };
+        });
 
         return res.json(decisions);
 
