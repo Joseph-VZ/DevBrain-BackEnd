@@ -129,7 +129,81 @@ export const getProjectStats = async (
             [id]
         );
 
-        return res.json({
+        /* =========================
+           Estadísticas por miembro
+        ========================= */
+
+        const projectMembersResult = await pool.query(
+            `
+            SELECT
+                u.id,
+                u.nombre
+            FROM miembros_proyecto mp
+            INNER JOIN usuarios u
+                ON mp.usuario_id = u.id
+            WHERE mp.proyecto_id = $1
+            ORDER BY u.nombre
+            `,
+            [id]
+        );
+
+        const decisionsByUserResult = await pool.query(
+            `
+            SELECT
+                usuario_proponente_id,
+                COUNT(*)::int AS total
+            FROM decisiones
+            WHERE proyecto_id = $1
+            GROUP BY usuario_proponente_id
+            `,
+            [id]
+        );
+
+        const votesByUserResult = await pool.query(
+            `
+            SELECT
+                v.usuario_id,
+                COUNT(*)::int AS total
+            FROM votos v
+            INNER JOIN decisiones d
+                ON d.id = v.decision_id
+            WHERE d.proyecto_id = $1
+            GROUP BY v.usuario_id
+            `,
+            [id]
+        );
+
+        const porMiembro = projectMembersResult.rows.map((member) => ({
+            userId: member.id,
+            name: member.nombre,
+            decisionesPropuestas: 0,
+            votosEmitidos: 0
+        }));
+
+        for (const decision of decisionsByUserResult.rows) {
+
+            const miembro = porMiembro.find(
+                (m) => m.userId === decision.usuario_proponente_id
+            );
+
+            if (miembro) {
+                miembro.decisionesPropuestas = Number(decision.total);
+            }
+
+        }
+
+        for (const vote of votesByUserResult.rows) {
+
+            const miembro = porMiembro.find(
+                (m) => m.userId === vote.usuario_id
+            );
+
+            if (miembro) {
+                miembro.votosEmitidos = Number(vote.total);
+            }
+
+        }
+                return res.json({
 
             totalDecisiones: decisionsResult.rows.length,
 
@@ -141,11 +215,15 @@ export const getProjectStats = async (
 
             totalVotos: votesResult.rows[0].total,
 
-            totalMiembros: membersResult.rows[0].total
+            totalMiembros: membersResult.rows[0].total,
+
+            porMiembro
 
         });
 
     } catch (error) {
+
+        console.error(error);
 
         return res.status(500).json({
             error: "Error al obtener estadísticas"
