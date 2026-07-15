@@ -16,7 +16,13 @@ import statsRoutes from "./routes/stats.routes.js";
 
 const app = express();
 
-app.use(cors({ origin: ["http://localhost:5173", "https://dev-brain-front-end.vercel.app"], credentials: true }));
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://dev-brain-front-end.vercel.app"
+  ],
+  credentials: true,
+}));
 
 app.use(express.json());
 
