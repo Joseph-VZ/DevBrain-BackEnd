@@ -2,6 +2,7 @@ import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
+import cors from "cors";
 import { conectarBaseDatos } from "./config/database.js";
 
 import authRoutes from "./routes/auth.routes.js";
@@ -15,6 +16,13 @@ import statsRoutes from "./routes/stats.routes.js";
 
 const app = express();
 
+app.use(cors({
+  origin: [
+    "http://localhost:5173",
+    "https://dev-brain-front-end.vercel.app"
+  ],
+  credentials: true,
+}));
 app.use(express.json());
 
 
