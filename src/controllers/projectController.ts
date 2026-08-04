@@ -16,7 +16,8 @@ export const getProjects = async (req: Request, res: Response) => {
                 p.id,
                 p.nombre,
                 p.descripcion,
-                p.fecha_creacion
+                p.fecha_creacion,
+                mp.rol
             FROM proyectos p
             INNER JOIN miembros_proyecto mp
                 ON p.id = mp.proyecto_id
@@ -30,7 +31,8 @@ export const getProjects = async (req: Request, res: Response) => {
             id: project.id,
             name: project.nombre,
             description: project.descripcion,
-            createdAt: project.fecha_creacion
+            createdAt: project.fecha_creacion,
+            role: project.rol
         }));
 
         return res.json(projects);
@@ -58,7 +60,8 @@ export const getProjectById = async (req: Request, res: Response) => {
                 p.id,
                 p.nombre,
                 p.descripcion,
-                p.fecha_creacion
+                p.fecha_creacion,
+                mp.rol
             FROM proyectos p
             INNER JOIN miembros_proyecto mp
                 ON p.id = mp.proyecto_id
@@ -81,7 +84,8 @@ export const getProjectById = async (req: Request, res: Response) => {
             id: project.id,
             name: project.nombre,
             description: project.descripcion,
-            createdAt: project.fecha_creacion
+            createdAt: project.fecha_creacion,
+            role: project.rol
         });
 
     } catch (error) {
@@ -161,20 +165,25 @@ export const updateProject = async (req: Request, res: Response) => {
             SELECT p.id
             FROM proyectos p
             INNER JOIN miembros_proyecto mp
-            ON p.id = mp.proyecto_id
-            WHERE
-                p.id = $1
+                ON p.id = mp.proyecto_id
+            WHERE p.id = $1
             AND mp.usuario_id = $2
+            AND mp.rol = 'administrador'
             `,
             [id, userId]
         );
 
         if (exists.rows.length === 0) {
-            return res.status(404).json({
-                error: "Proyecto no encontrado"
+            return res.status(403).json({
+                error: "No tienes permisos para editar este proyecto"
             });
         }
 
+        if (!name?.trim()) {
+            return res.status(400).json({
+                error: "El nombre del proyecto es obligatorio"
+            });
+        }
         const result = await pool.query(
             `
             UPDATE proyectos
@@ -214,23 +223,22 @@ export const deleteProject = async (req: Request, res: Response) => {
         const userId = (req as any).user.id;
 
         const pool = obtenerPool();
-
         const exists = await pool.query(
             `
             SELECT p.id
             FROM proyectos p
             INNER JOIN miembros_proyecto mp
-            ON p.id = mp.proyecto_id
-            WHERE
-                p.id = $1
+                ON p.id = mp.proyecto_id
+            WHERE p.id = $1
             AND mp.usuario_id = $2
+            AND mp.rol = 'administrador'
             `,
             [id, userId]
         );
 
         if (exists.rows.length === 0) {
-            return res.status(404).json({
-                error: "Proyecto no encontrado"
+            return res.status(403).json({
+                error: "No tienes permisos para eliminar este proyecto"
             });
         }
 
