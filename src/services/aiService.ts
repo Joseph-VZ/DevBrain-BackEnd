@@ -32,24 +32,46 @@ export const queryAI = async (
         }
         const decisions = await pool.query(
             `
-            SELECT
+           SELECT
                 d.id,
                 d.titulo,
                 d.descripcion,
                 d.estado,
                 d.fecha_creacion,
+
+                u.nombre AS usuario_proponente,
+
                 COALESCE(
                     json_agg(DISTINCT ad.nombre)
                     FILTER (WHERE ad.id IS NOT NULL),
                     '[]'
                 ) AS alternativas,
-                COUNT(DISTINCT v.id) FILTER (WHERE v.voto = 'aprobar')::int  AS a_favor,
+
+                COUNT(DISTINCT v.id) FILTER (WHERE v.voto = 'aprobar')::int AS a_favor,
+
                 COUNT(DISTINCT v.id) FILTER (WHERE v.voto = 'rechazar')::int AS en_contra
+
             FROM decisiones d
-            LEFT JOIN alternativas_decision ad ON d.id = ad.decision_id
-            LEFT JOIN votos v ON d.id = v.decision_id
+
+            LEFT JOIN usuarios u
+                ON d.usuario_proponente_id = u.id
+
+            LEFT JOIN alternativas_decision ad
+                ON d.id = ad.decision_id
+
+            LEFT JOIN votos v
+                ON d.id = v.decision_id
+
             WHERE d.proyecto_id = $1
-            GROUP BY d.id, d.titulo, d.descripcion, d.estado, d.fecha_creacion
+
+            GROUP BY
+                d.id,
+                d.titulo,
+                d.descripcion,
+                d.estado,
+                d.fecha_creacion,
+                u.nombre
+
             ORDER BY d.fecha_creacion DESC
         `,
             [projectId]
@@ -85,11 +107,31 @@ export const queryAI = async (
                 const alts = Array.isArray(d.alternativas) && d.alternativas.length
                     ? d.alternativas.join(", ")
                     : "ninguna";
-                return `Decisión #${d.id} (${fecha}) — estado: ${d.estado}
-Título: ${d.titulo}
-Descripción: ${d.descripcion}
-Alternativas evaluadas: ${alts}
-Votos: ${d.a_favor} a favor, ${d.en_contra} en contra`;
+                return `
+                    Título de la decisión:
+                    ${d.titulo}
+
+                    Descripción:
+                    ${d.descripcion}
+
+                    Propuesto por:
+                    ${d.usuario_proponente || "Usuario desconocido"}
+
+                    Alternativas evaluadas:
+                    ${alts}
+
+                    Estado:
+                    ${d.estado}
+
+                    Fecha de creación:
+                    ${fecha}
+
+                    Referencia interna:
+                    Decisión #${d.id}
+
+                    Votos:
+                    ${d.a_favor} a favor, ${d.en_contra} en contra
+                    `;
             })
             .join("\n\n---\n\n");
             const conversationContext = conversations.rows
@@ -108,7 +150,9 @@ Reglas:
 - Responde ÚNICAMENTE con la información del contexto.
 - Prioriza siempre el historial de decisiones.
 - Si el historial de conversación aporta información útil, úsalo para mantener continuidad.
-- Cuando menciones una decisión, cítala con su número, por ejemplo: "(decisión #12)".
+- Cuando menciones una decisión, usa primero su título y después agrega su número de referencia.
+- Nunca respondas únicamente con un ID.
+- Cuando el usuario pregunte por una decisión, incluye título, descripción, alternativas evaluadas, estado y fecha si están disponibles.
 - Si la respuesta no está en el contexto, indícalo claramente.
 - Sé conciso y responde en español.
 
