@@ -54,6 +54,19 @@ export const queryAI = async (
         `,
             [projectId]
         );
+        // Obtener las últimas conversaciones del proyecto
+        const conversations = await pool.query(
+            `
+            SELECT
+                pregunta,
+                respuesta
+            FROM ai_conversations
+            WHERE proyecto_id = $1
+            ORDER BY fecha_creacion DESC
+            LIMIT 10
+            `,
+            [projectId]
+        );
 
         if (decisions.rows.length === 0) {
             return {
@@ -79,21 +92,33 @@ Alternativas evaluadas: ${alts}
 Votos: ${d.a_favor} a favor, ${d.en_contra} en contra`;
             })
             .join("\n\n---\n\n");
+            const conversationContext = conversations.rows
+    .reverse()
+    .map((c) => {
+        return `Usuario: ${c.pregunta}
+
+IA: ${c.respuesta}`;
+    })
+    .join("\n\n------------------------\n\n");
 
         const prompt = `
 Eres el asistente de memoria técnica de DevBrain. Conoces el historial de decisiones de un proyecto de software y ayudas al equipo a recordar QUÉ se decidió y POR QUÉ.
 
 Reglas:
-- Responde ÚNICAMENTE con la información del contexto de decisiones.
+- Responde ÚNICAMENTE con la información del contexto.
+- Prioriza siempre el historial de decisiones.
+- Si el historial de conversación aporta información útil, úsalo para mantener continuidad.
 - Cuando menciones una decisión, cítala con su número, por ejemplo: "(decisión #12)".
-- Si el usuario pregunta por algo que ya se discutió, dilo explícitamente y resume la conclusión y el estado.
-- Si la respuesta no está en el contexto, dilo claramente y sugiere registrar una decisión al respecto.
-- Sé conciso y directo, en español.
+- Si la respuesta no está en el contexto, indícalo claramente.
+- Sé conciso y responde en español.
 
 Contexto de decisiones del proyecto:
 ${context}
 
-Pregunta del usuario:
+Historial reciente de conversación:
+${conversationContext || "No existen conversaciones previas."}
+
+Nueva pregunta del usuario:
 ${question}
 `;
 
@@ -107,6 +132,30 @@ ${question}
         const response = result.response;
 
         const answer = response.text();
+        await pool.query(
+    `
+    INSERT INTO ai_conversations
+    (
+        proyecto_id,
+        usuario_id,
+        pregunta,
+        respuesta
+    )
+    VALUES
+    (
+        $1,
+        $2,
+        $3,
+        $4
+    )
+    `,
+    [
+        projectId,
+        userId,
+        question,
+        answer
+    ]
+);
 
         // Fuentes citables: las decisiones cuyo #id aparece en la respuesta.
         const sources = decisions.rows
