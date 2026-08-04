@@ -97,3 +97,58 @@ export function buildInvitationEmail(params: {
 
     return { subject, html, text };
 }
+export function buildVerificationEmail(params: {
+    userName: string;
+    verificationUrl: string;
+}): { subject: string; html: string; text: string } {
+
+    const { userName, verificationUrl } = params;
+
+    const subject = "Verifica tu cuenta de DevBrain";
+
+    const text =
+        `Hola ${userName},\n\n` +
+        `Gracias por registrarte en DevBrain.\n` +
+        `Para activar tu cuenta, abre el siguiente enlace:\n\n` +
+        `${verificationUrl}\n\n` +
+        `Este enlace es válido durante 24 horas.\n`;
+
+    const html = `
+        <div style="font-family: Arial, sans-serif; background:#08091a; padding:32px; color:#eaebf5;">
+          <div style="max-width:520px; margin:0 auto; background:#11132b; border:1px solid rgba(255,255,255,0.1); border-radius:16px; padding:32px;">
+            <p style="font-size:12px; letter-spacing:2px; text-transform:uppercase; color:#7b7bff; margin:0;">
+              DevBrain
+            </p>
+
+            <h1 style="font-size:26px; margin:12px 0 8px;">
+              Verifica tu cuenta
+            </h1>
+
+            <p style="color:#8e92b0; line-height:1.6;">
+              Hola <strong style="color:#eaebf5;">${userName}</strong>,
+              gracias por registrarte en DevBrain.
+            </p>
+
+            <p style="color:#8e92b0; line-height:1.6;">
+              Haz clic en el botón para activar tu cuenta:
+            </p>
+
+            <a href="${verificationUrl}"
+               style="display:inline-block; margin-top:20px; background:#7b7bff; color:#08091a; font-weight:700; text-decoration:none; padding:14px 22px; border-radius:10px;">
+               Verificar mi cuenta
+            </a>
+
+            <p style="color:#5b5f80; font-size:12px; margin-top:24px; word-break:break-all;">
+              Si el botón no funciona, copia y pega este enlace:<br>
+              ${verificationUrl}
+            </p>
+
+            <p style="color:#5b5f80; font-size:12px; margin-top:16px;">
+              Este enlace será válido durante 24 horas.
+            </p>
+          </div>
+        </div>
+    `;
+
+    return { subject, html, text };
+}
