@@ -12,6 +12,7 @@ import voteRoutes from "./routes/vote.routes.js";
 import invitationRoutes from "./routes/invitation.routes.js";
 import aiRoutes from "./routes/ai.routes.js";
 import statsRoutes from "./routes/stats.routes.js";
+import kanbanRoutes from "./routes/kanban.routes.js";
 
 
 const app = express();
@@ -30,6 +31,7 @@ app.use(express.json());
 app.use("/auth", authRoutes);
 
 app.use("/projects", projectRoutes);
+app.use("/projects", kanbanRoutes);
 app.use("/projects", statsRoutes);
 
 app.use("/decisions", decisionRoutes);
