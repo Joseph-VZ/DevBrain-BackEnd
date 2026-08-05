@@ -16,6 +16,8 @@ import {
     removeMember
 } from "../controllers/invitationController.js";
 
+import { getRadar } from "../controllers/radarController.js";
+
 import { authMiddleware} from "../middleware/auth.middleware.js";
 
 const router = Router();
@@ -27,6 +29,9 @@ router.post("/", createProject);
 router.get("/:id", getProjectById);
 router.put("/:id", updateProject);
 router.delete("/:id", deleteProject);
+
+// Radar de riesgos de decisiones (IA + señales)
+router.get("/:id/radar", getRadar);
 
 // Miembros e invitaciones del proyecto
 router.get("/:id/members", listMembers);
