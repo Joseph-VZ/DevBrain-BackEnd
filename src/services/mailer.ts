@@ -1,4 +1,5 @@
 import nodemailer, { Transporter } from "nodemailer";
+import dns from "dns";
 
 /*
  mailer
@@ -8,6 +9,11 @@ import nodemailer, { Transporter } from "nodemailer";
  Si no lo están (entorno de desarrollo), cae en un modo "consola": no envía
  nada pero imprime el correo en la terminal para poder copiar el enlace.
 */
+
+// Forzar IPv4 primero al resolver DNS. En Render (free) la ruta IPv6 falla
+// con ENETUNREACH y smtp.gmail.com tiene registros IPv6, así que sin esto
+// el envío puede fallar en producción. En local no cambia el comportamiento.
+dns.setDefaultResultOrder("ipv4first");
 
 let transporter: Transporter | null = null;
 
