@@ -1,5 +1,6 @@
 import nodemailer, { Transporter } from "nodemailer";
 import dns from "dns";
+import https from "https";
 
 /*
  mailer
@@ -53,14 +54,75 @@ interface MailInput {
     text?: string;
 }
 
+/*
+ Envío por la API HTTP de Resend (https://api.resend.com/emails).
+ Va por HTTPS (443), que Render sí permite — a diferencia del SMTP (465/587),
+ que en Render (free) suele quedar bloqueado / con timeout. Usamos el módulo
+ https nativo para no depender de la versión de Node ni de dependencias extra.
+*/
+function sendViaResendApi(
+    apiKey: string,
+    payload: { from: string; to: string; subject: string; html: string; text?: string }
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const data = JSON.stringify(payload);
+        const req = https.request(
+            {
+                hostname: "api.resend.com",
+                path: "/emails",
+                method: "POST",
+                headers: {
+                    Authorization: `Bearer ${apiKey}`,
+                    "Content-Type": "application/json",
+                    "Content-Length": Buffer.byteLength(data)
+                },
+                timeout: 15000
+            },
+            (res) => {
+                let body = "";
+                res.on("data", (chunk) => (body += chunk));
+                res.on("end", () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Resend API ${res.statusCode}: ${body}`));
+                    }
+                });
+            }
+        );
+        req.on("error", reject);
+        req.on("timeout", () => req.destroy(new Error("Resend API timeout")));
+        req.write(data);
+        req.end();
+    });
+}
+
+// Resuelve la API key de Resend: variable dedicada, o SMTP_PASS si el host es
+// smtp.resend.com (así no hay que agregar env vars nuevas en Render).
+function getResendApiKey(): string {
+    if (process.env.RESEND_API_KEY) return process.env.RESEND_API_KEY.trim();
+    if (process.env.SMTP_HOST === "smtp.resend.com" && process.env.SMTP_PASS) {
+        return process.env.SMTP_PASS.trim();
+    }
+    return "";
+}
+
 export async function sendMail({ to, subject, html, text }: MailInput): Promise<void> {
 
     const from = process.env.MAIL_FROM || "DevBrain <no-reply@devbrain.app>";
-    const tx = getTransporter();
 
+    // 1) Preferir la API HTTP de Resend (evita el bloqueo de SMTP en Render).
+    const resendKey = getResendApiKey();
+    if (resendKey) {
+        await sendViaResendApi(resendKey, { from, to, subject, html, text });
+        return;
+    }
+
+    // 2) SMTP genérico (Gmail u otro proveedor).
+    const tx = getTransporter();
     if (!tx) {
-        // Fallback de desarrollo: no hay SMTP configurado.
-        console.log("\n========== [DEV MAILER] Correo no enviado (SMTP no configurado) ==========");
+        // Fallback de desarrollo: no hay correo configurado.
+        console.log("\n========== [DEV MAILER] Correo no enviado (sin config de correo) ==========");
         console.log("Para:", to);
         console.log("Asunto:", subject);
         console.log("Contenido:\n", text || html);
