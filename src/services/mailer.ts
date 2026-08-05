@@ -107,18 +107,82 @@ function getResendApiKey(): string {
     return "";
 }
 
+// Separa "Nombre <correo@dominio>" en { name, email }.
+function parseFrom(from: string): { name: string; email: string } {
+    const m = from.match(/^\s*(.*?)\s*<([^>]+)>\s*$/);
+    if (m) return { name: m[1] || "DevBrain", email: m[2].trim() };
+    return { name: "DevBrain", email: from.trim() };
+}
+
+/*
+ Envío por la API HTTP de Brevo (https://api.brevo.com/v3/smtp/email).
+ Va por HTTPS (443), compatible con Render. Permite enviar a cualquier
+ destinatario con solo un remitente verificado (sin dominio propio).
+*/
+function sendViaBrevoApi(
+    apiKey: string,
+    from: string,
+    payload: { to: string; subject: string; html: string; text?: string }
+): Promise<void> {
+    return new Promise((resolve, reject) => {
+        const sender = parseFrom(from);
+        const data = JSON.stringify({
+            sender,
+            to: [{ email: payload.to }],
+            subject: payload.subject,
+            htmlContent: payload.html,
+            textContent: payload.text || ""
+        });
+        const req = https.request(
+            {
+                hostname: "api.brevo.com",
+                path: "/v3/smtp/email",
+                method: "POST",
+                headers: {
+                    "api-key": apiKey,
+                    "Content-Type": "application/json",
+                    accept: "application/json",
+                    "Content-Length": Buffer.byteLength(data)
+                },
+                timeout: 15000
+            },
+            (res) => {
+                let body = "";
+                res.on("data", (chunk) => (body += chunk));
+                res.on("end", () => {
+                    if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
+                        resolve();
+                    } else {
+                        reject(new Error(`Brevo API ${res.statusCode}: ${body}`));
+                    }
+                });
+            }
+        );
+        req.on("error", reject);
+        req.on("timeout", () => req.destroy(new Error("Brevo API timeout")));
+        req.write(data);
+        req.end();
+    });
+}
+
 export async function sendMail({ to, subject, html, text }: MailInput): Promise<void> {
 
     const from = process.env.MAIL_FROM || "DevBrain <no-reply@devbrain.app>";
 
-    // 1) Preferir la API HTTP de Resend (evita el bloqueo de SMTP en Render).
+    // 1) Brevo por API HTTP (si hay BREVO_API_KEY).
+    if (process.env.BREVO_API_KEY) {
+        await sendViaBrevoApi(process.env.BREVO_API_KEY.trim(), from, { to, subject, html, text });
+        return;
+    }
+
+    // 2) Resend por API HTTP (evita el bloqueo de SMTP en Render).
     const resendKey = getResendApiKey();
     if (resendKey) {
         await sendViaResendApi(resendKey, { from, to, subject, html, text });
         return;
     }
 
-    // 2) SMTP genérico (Gmail u otro proveedor).
+    // 3) SMTP genérico (Gmail u otro proveedor).
     const tx = getTransporter();
     if (!tx) {
         // Fallback de desarrollo: no hay correo configurado.
@@ -217,7 +281,7 @@ export function buildVerificationEmail(params: {
             </p>
 
             <p style="color:#5b5f80; font-size:12px; margin-top:16px;">
-              Este enlace será válido durante 24 horas...
+              Este enlace será válido durante 24 horas.
             </p>
           </div>
         </div>
