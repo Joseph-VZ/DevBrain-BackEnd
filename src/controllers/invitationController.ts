@@ -414,7 +414,12 @@ export const acceptInvitation = async (req: Request, res: Response) => {
         );
         const userEmail = userResult.rows[0]?.correo;
 
-        if (userEmail !== invitation.correo) {
+        // Sin distinguir mayúsculas: quien fue invitado como "Ana@x.com" debe poder
+        // aceptar aunque su cuenta esté registrada como "ana@x.com".
+        if (
+            (userEmail || "").trim().toLowerCase() !==
+            (invitation.correo || "").trim().toLowerCase()
+        ) {
             await client.query("ROLLBACK");
             return res.status(403).json({
                 error: "Esta invitación fue enviada a otro correo"
