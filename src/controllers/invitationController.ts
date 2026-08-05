@@ -217,6 +217,76 @@ export const listMembers = async (req: Request, res: Response) => {
 };
 
 /* =========================
+   REMOVE MEMBER
+   DELETE /projects/:id/members/:userId
+   Solo un administrador puede quitar miembros. No puede quitarse a sí mismo
+   ni dejar al proyecto sin administradores.
+========================= */
+export const removeMember = async (req: Request, res: Response) => {
+
+    try {
+        const projectId = req.params.id;
+        const targetUserId = req.params.userId;
+        const userId = (req as any).user.id;
+
+        const role = await getMemberRole(projectId, userId);
+        if (!role) {
+            return res.status(404).json({ error: "Proyecto no encontrado o sin acceso" });
+        }
+
+        if (role !== "administrador") {
+            return res.status(403).json({
+                error: "Solo un administrador puede quitar participantes"
+            });
+        }
+
+        if (String(targetUserId) === String(userId)) {
+            return res.status(400).json({
+                error: "No puedes quitarte a ti mismo del proyecto"
+            });
+        }
+
+        const pool = obtenerPool();
+
+        // El miembro a quitar debe existir en el proyecto.
+        const target = await pool.query(
+            `SELECT rol FROM miembros_proyecto WHERE proyecto_id = $1 AND usuario_id = $2`,
+            [projectId, targetUserId]
+        );
+
+        if (target.rows.length === 0) {
+            return res.status(404).json({ error: "Ese participante no pertenece al proyecto" });
+        }
+
+        // No dejar al proyecto sin administradores.
+        if (target.rows[0].rol === "administrador") {
+            const admins = await pool.query(
+                `SELECT COUNT(*)::int AS total
+                 FROM miembros_proyecto
+                 WHERE proyecto_id = $1 AND rol = 'administrador'`,
+                [projectId]
+            );
+
+            if (admins.rows[0].total <= 1) {
+                return res.status(400).json({
+                    error: "No puedes quitar al único administrador del proyecto"
+                });
+            }
+        }
+
+        await pool.query(
+            `DELETE FROM miembros_proyecto WHERE proyecto_id = $1 AND usuario_id = $2`,
+            [projectId, targetUserId]
+        );
+
+        return res.json({ message: "Participante eliminado del proyecto" });
+
+    } catch (error) {
+        return res.status(500).json({ error: "Error al quitar al participante" });
+    }
+};
+
+/* =========================
    CANCEL INVITATION
    DELETE /projects/:id/invitations/:invitationId
 ========================= */

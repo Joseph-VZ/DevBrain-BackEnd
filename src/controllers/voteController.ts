@@ -120,7 +120,7 @@ export const postVote = async (req: Request, res: Response) => {
 
         const decision = await client.query(
             `
-            SELECT id
+            SELECT id, fecha_cierre
             FROM decisiones
             WHERE id = $1
             `,
@@ -133,6 +133,21 @@ export const postVote = async (req: Request, res: Response) => {
 
             return res.status(404).json({
                 error: "La decisión no existe"
+            });
+        }
+
+        /* =========================
+           Verificar que la votación siga abierta
+        ========================= */
+
+        const closesAt = decision.rows[0].fecha_cierre;
+
+        if (closesAt && new Date(closesAt).getTime() < Date.now()) {
+
+            await client.query("ROLLBACK");
+
+            return res.status(403).json({
+                error: "La votación de esta decisión ya cerró"
             });
         }
 

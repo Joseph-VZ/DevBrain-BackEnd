@@ -38,8 +38,21 @@ export const queryAI = async (
                 d.descripcion,
                 d.estado,
                 d.fecha_creacion,
+                d.fecha_cierre,
+                d.consecuencias,
 
                 u.nombre AS usuario_proponente,
+
+                prev.id     AS reemplaza_id,
+                prev.titulo AS reemplaza_titulo,
+
+                (
+                    SELECT json_build_object('id', n.id, 'title', n.titulo)
+                    FROM decisiones n
+                    WHERE n.reemplaza_a = d.id
+                    ORDER BY n.fecha_creacion DESC
+                    LIMIT 1
+                ) AS reemplazada_por,
 
                 COALESCE(
                     json_agg(DISTINCT ad.nombre)
@@ -62,6 +75,9 @@ export const queryAI = async (
             LEFT JOIN votos v
                 ON d.id = v.decision_id
 
+            LEFT JOIN decisiones prev
+                ON d.reemplaza_a = prev.id
+
             WHERE d.proyecto_id = $1
 
             GROUP BY
@@ -70,7 +86,11 @@ export const queryAI = async (
                 d.descripcion,
                 d.estado,
                 d.fecha_creacion,
-                u.nombre
+                d.fecha_cierre,
+                d.consecuencias,
+                u.nombre,
+                prev.id,
+                prev.titulo
 
             ORDER BY d.fecha_creacion DESC
         `,
@@ -107,6 +127,27 @@ export const queryAI = async (
                 const alts = Array.isArray(d.alternativas) && d.alternativas.length
                     ? d.alternativas.join(", ")
                     : "ninguna";
+
+                const consecuencias = d.consecuencias
+                    ? d.consecuencias
+                    : "no documentadas";
+
+                // Estado real considerando el linaje: si otra decisión la reemplazó,
+                // esta ya es obsoleta (dejó de ser vigente).
+                const reemplazadaPor = d.reemplazada_por;
+                const estadoReal = reemplazadaPor
+                    ? `OBSOLETA — fue reemplazada por "${reemplazadaPor.title}" (Decisión #${reemplazadaPor.id})`
+                    : d.estado;
+
+                const linaje = d.reemplaza_id
+                    ? `Reemplaza a "${d.reemplaza_titulo}" (Decisión #${d.reemplaza_id})`
+                    : "no reemplaza a ninguna decisión anterior";
+
+                const cierre = d.fecha_cierre
+                    ? `${new Date(d.fecha_cierre).toISOString().slice(0, 10)}` +
+                      `${new Date(d.fecha_cierre).getTime() < Date.now() ? " (votación cerrada)" : " (votación abierta)"}`
+                    : "sin fecha límite";
+
                 return `
                     Título de la decisión:
                     ${d.titulo}
@@ -120,11 +161,20 @@ export const queryAI = async (
                     Alternativas evaluadas:
                     ${alts}
 
-                    Estado:
-                    ${d.estado}
+                    Consecuencias / trade-offs aceptados:
+                    ${consecuencias}
+
+                    Estado / vigencia:
+                    ${estadoReal}
+
+                    Linaje:
+                    ${linaje}
 
                     Fecha de creación:
                     ${fecha}
+
+                    Cierre de votación:
+                    ${cierre}
 
                     Referencia interna:
                     Decisión #${d.id}
@@ -153,6 +203,10 @@ Reglas:
 - Cuando menciones una decisión, usa primero su título y después agrega su número de referencia.
 - Nunca respondas únicamente con un ID.
 - Cuando el usuario pregunte por una decisión, incluye título, descripción, alternativas evaluadas, estado y fecha si están disponibles.
+- Presta especial atención a la VIGENCIA: si una decisión está marcada como OBSOLETA (fue reemplazada por otra), acláralo y remite a la decisión vigente que la reemplazó. Nunca presentes una decisión obsoleta como si siguiera vigente.
+- Cuando expliques el PORQUÉ de una decisión, menciona sus consecuencias / trade-offs aceptados si están documentados; si dicen "no documentadas", indícalo como un hueco de conocimiento.
+- Si te preguntan qué votar o qué falta por decidir, apóyate en el estado y en si la votación está abierta o cerrada.
+- Al final, cuando sea útil, sugiere 1 o 2 preguntas de seguimiento relevantes en una línea que empiece con "También podrías preguntar:".
 - Si la respuesta no está en el contexto, indícalo claramente.
 - Sé conciso y responde en español.
 

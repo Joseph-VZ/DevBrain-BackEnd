@@ -12,7 +12,8 @@ import {
     createInvitation,
     listInvitations,
     listMembers,
-    cancelInvitation
+    cancelInvitation,
+    removeMember
 } from "../controllers/invitationController.js";
 
 import { authMiddleware} from "../middleware/auth.middleware.js";
@@ -29,6 +30,7 @@ router.delete("/:id", deleteProject);
 
 // Miembros e invitaciones del proyecto
 router.get("/:id/members", listMembers);
+router.delete("/:id/members/:userId", removeMember);
 router.get("/:id/invitations", listInvitations);
 router.post("/:id/invitations", createInvitation);
 router.delete("/:id/invitations/:invitationId", cancelInvitation);

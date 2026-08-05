@@ -14,7 +14,10 @@ export const createDecision = async (req: Request, res: Response) => {
             projectId,
             title,
             description,
-            alternatives
+            alternatives,
+            closesAt,
+            consequences,
+            supersedesId
         } = req.body;
 
         const userId = (req as any).user.id;
@@ -54,6 +57,44 @@ export const createDecision = async (req: Request, res: Response) => {
         }
 
         /* =========================
+           Validar la decisión que se reemplaza (linaje).
+           Debe existir y pertenecer al mismo proyecto.
+        ========================= */
+
+        let supersedes: number | null = null;
+
+        if (
+            supersedesId !== undefined &&
+            supersedesId !== null &&
+            supersedesId !== ""
+        ) {
+            const previous = await client.query(
+                `SELECT id FROM decisiones WHERE id = $1 AND proyecto_id = $2`,
+                [supersedesId, projectId]
+            );
+
+            if (previous.rows.length === 0) {
+                await client.query("ROLLBACK");
+                return res.status(400).json({
+                    error: "La decisión que se intenta reemplazar no existe en este proyecto"
+                });
+            }
+
+            supersedes = Number(supersedesId);
+        }
+
+        // Normalizamos la fecha de cierre (viene como string del input datetime-local).
+        const closesAtValue =
+            closesAt && !Number.isNaN(new Date(closesAt).getTime())
+                ? new Date(closesAt)
+                : null;
+
+        const consequencesValue =
+            typeof consequences === "string" && consequences.trim() !== ""
+                ? consequences.trim()
+                : null;
+
+        /* =========================
            Crear decisión
         ========================= */
 
@@ -64,14 +105,20 @@ export const createDecision = async (req: Request, res: Response) => {
                 proyecto_id,
                 usuario_proponente_id,
                 titulo,
-                descripcion
+                descripcion,
+                fecha_cierre,
+                consecuencias,
+                reemplaza_a
             )
             VALUES
             (
                 $1,
                 $2,
                 $3,
-                $4
+                $4,
+                $5,
+                $6,
+                $7
             )
             RETURNING *
             `,
@@ -79,7 +126,10 @@ export const createDecision = async (req: Request, res: Response) => {
                 projectId,
                 userId,
                 title,
-                description
+                description,
+                closesAtValue,
+                consequencesValue,
+                supersedes
             ]
         );
 
@@ -132,6 +182,12 @@ export const createDecision = async (req: Request, res: Response) => {
             description: decision.descripcion,
 
             alternatives: alternatives ?? [],
+
+            consequences: decision.consecuencias,
+
+            closesAt: decision.fecha_cierre,
+
+            supersedesId: decision.reemplaza_a,
 
             proposedBy: decision.usuario_proponente_id,
 
@@ -233,6 +289,21 @@ export const getDecisions = async (req: Request, res: Response) => {
                 d.descripcion,
                 d.estado,
                 d.fecha_creacion,
+                d.fecha_cierre,
+                d.consecuencias,
+
+                -- Decisión que ESTA reemplaza (linaje hacia atrás).
+                prev.id     AS supersedes_id,
+                prev.titulo AS supersedes_title,
+
+                -- Decisión más reciente que reemplaza a ESTA (linaje hacia adelante).
+                (
+                    SELECT json_build_object('id', n.id, 'title', n.titulo)
+                    FROM decisiones n
+                    WHERE n.reemplaza_a = d.id
+                    ORDER BY n.fecha_creacion DESC
+                    LIMIT 1
+                ) AS superseded_by,
 
                 COALESCE(
                     json_agg(DISTINCT ad.nombre)
@@ -251,6 +322,9 @@ export const getDecisions = async (req: Request, res: Response) => {
             LEFT JOIN votos v
                 ON d.id = v.decision_id
 
+            LEFT JOIN decisiones prev
+                ON d.reemplaza_a = prev.id
+
             WHERE d.proyecto_id = $1
             ${searchFilter}
 
@@ -261,17 +335,31 @@ export const getDecisions = async (req: Request, res: Response) => {
                 d.titulo,
                 d.descripcion,
                 d.estado,
-                d.fecha_creacion
+                d.fecha_creacion,
+                d.fecha_cierre,
+                d.consecuencias,
+                prev.id,
+                prev.titulo
 
             ORDER BY d.fecha_creacion DESC
             `,
             params
         );
 
+        const now = Date.now();
+
         const decisions = result.rows.map(decision => {
 
             const approve = decision.votes_approve;
             const reject = decision.votes_reject;
+
+            // ¿La votación ya cerró? (solo si hay fecha de cierre y ya pasó)
+            const votingClosed = Boolean(
+                decision.fecha_cierre &&
+                new Date(decision.fecha_cierre).getTime() < now
+            );
+
+            const supersededBy = decision.superseded_by || null;
 
             // El estado se deriva de los votos cuando aún está "pendiente".
             let status = decision.estado;
@@ -280,12 +368,25 @@ export const getDecisions = async (req: Request, res: Response) => {
                 else if (reject > approve) status = "rechazada";
             }
 
+            // Una decisión reemplazada por otra queda como obsoleta,
+            // sin importar el resultado de su votación.
+            if (supersededBy) {
+                status = "obsoleta";
+            }
+
             return {
                 id: decision.id,
                 projectId: decision.proyecto_id,
                 title: decision.titulo,
                 description: decision.descripcion,
                 alternatives: decision.alternatives,
+                consequences: decision.consecuencias,
+                closesAt: decision.fecha_cierre,
+                votingClosed,
+                supersedes: decision.supersedes_id
+                    ? { id: decision.supersedes_id, title: decision.supersedes_title }
+                    : null,
+                supersededBy,
                 proposedBy: decision.usuario_proponente_id,
                 status,
                 votes: { approve, reject, total: approve + reject },
