@@ -30,6 +30,11 @@ function getTransporter(): Transporter | null {
         host: SMTP_HOST,
         port: Number(SMTP_PORT) || 587,
         secure: Number(SMTP_PORT) === 465,
+        // Timeouts para no colgarse si el SMTP no responde (evita el
+        // "pending" largo en Render antes de fallar).
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 15000,
         auth: {
             user: SMTP_USER,
             // Las contraseñas de aplicación de Gmail se muestran con espacios;
