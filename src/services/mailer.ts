@@ -150,7 +150,7 @@ export function buildVerificationEmail(params: {
             </p>
 
             <p style="color:#5b5f80; font-size:12px; margin-top:16px;">
-              Este enlace será válido durante 24 horas.
+              Este enlace será válido durante 24 horas...
             </p>
           </div>
         </div>
