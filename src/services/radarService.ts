@@ -10,7 +10,7 @@ import { obtenerPool } from "../config/database.js";
 */
 
 type Severity = "alta" | "media" | "baja";
-type SignalType = "contradiccion" | "obsolescencia" | "estancada" | "hueco";
+type SignalType = "contradiccion" | "obsolescencia" | "estancada" | "hueco" | "claridad";
 
 interface RadarSignal {
     type: SignalType;
@@ -25,6 +25,36 @@ interface RadarSignal {
 const SEVERITY_WEIGHT: Record<Severity, number> = { alta: 3, media: 2, baja: 1 };
 
 const MS_PER_DAY = 1000 * 60 * 60 * 24;
+
+// Heurística de "texto sin sentido / de prueba" (ej. "hshshhs", "rsros", "asdasd").
+function isGibberish(text: string): boolean {
+    const t = (text || "").trim().toLowerCase();
+    if (!t) return false;
+
+    // Muchos caracteres iguales seguidos (aaaa, jjjj, xxxx).
+    if (/(.)\1{3,}/.test(t)) return true;
+
+    const letters = t.replace(/[^a-záéíóúüñ]/gi, "");
+    if (letters.length >= 4) {
+        const vowels = (letters.match(/[aeiouáéíóúü]/gi) || []).length;
+        // Casi sin vocales = probablemente teclado al azar.
+        if (vowels / letters.length <= 0.2) return true;
+    }
+    return false;
+}
+
+// ¿La decisión comunica un objetivo claro?
+function looksUnclear(title: string, description: string): boolean {
+    const t = (title || "").trim();
+    if (t.length < 4) return true;
+    if (isGibberish(t)) return true;
+
+    const d = (description || "").trim();
+    // Descripción claramente sin sentido (no solo corta).
+    if (d.length >= 4 && isGibberish(d)) return true;
+
+    return false;
+}
 
 export async function generateRadar(projectId: number) {
     const pool = obtenerPool();
@@ -165,15 +195,44 @@ export async function generateRadar(projectId: number) {
                 source: "auto"
             });
         }
+
+        // Decisión poco clara: título/descr. sin sentido o de prueba.
+        if (looksUnclear(dec.title, dec.description)) {
+            signals.push({
+                type: "claridad",
+                severity: "media",
+                title: "Decisión poco clara",
+                detail: `"${dec.title}" no comunica un objetivo claro (parece texto de prueba o sin sentido).`,
+                recommendation: "Renómbrala con un objetivo claro y accionable, o elimínala si era una prueba.",
+                decisions: [{ id: dec.id, title: dec.title }],
+                source: "auto"
+            });
+        }
     }
 
     // ── Señales de IA (contradicciones / obsolescencia por contenido) ──
     const vigentes = decisions.filter((d) => !d.isObsolete);
 
-    if (vigentes.length >= 2 && process.env.GEMINI_API_KEY) {
+    if (vigentes.length >= 1 && process.env.GEMINI_API_KEY) {
         try {
             const aiSignals = await analyzeWithAI(vigentes);
-            signals.push(...aiSignals);
+
+            // Evitar doble aviso de "poco clara" para una decisión ya marcada.
+            const claridadIds = new Set(
+                signals
+                    .filter((s) => s.type === "claridad")
+                    .flatMap((s) => s.decisions.map((d) => d.id))
+            );
+            const filtered = aiSignals.filter(
+                (s) =>
+                    !(
+                        s.type === "claridad" &&
+                        s.decisions.length > 0 &&
+                        s.decisions.every((d) => claridadIds.has(d.id))
+                    )
+            );
+
+            signals.push(...filtered);
         } catch (error) {
             console.error("Radar IA falló, se usan solo señales automáticas:", error);
         }
@@ -231,15 +290,16 @@ Consecuencias: ${cons}`;
     const prompt = `
 Eres un auditor técnico de DevBrain. Analiza SOLO las decisiones vigentes de un proyecto de software y detecta problemas reales. Sé conservador: si no hay evidencia clara, no inventes señales.
 
-Busca dos cosas:
+Busca tres cosas:
 1) CONTRADICCIONES: dos o más decisiones vigentes que no pueden coexistir (p. ej. una elige PostgreSQL y otra MongoDB para lo mismo; una prohíbe X y otra lo usa).
 2) OBSOLESCENCIA: una decisión que otra decisión más reciente vuelve desactualizada o incoherente, aunque no esté marcada formalmente como reemplazada.
+3) CLARIDAD: decisiones cuyo título o descripción parece texto de prueba, no tiene sentido, está incompleto o no comunica un objetivo claro (para estas, "decisionIds" lleva solo el id de esa decisión).
 
 Devuelve ÚNICAMENTE JSON válido con esta forma:
 {
   "signals": [
     {
-      "type": "contradiccion" | "obsolescencia",
+      "type": "contradiccion" | "obsolescencia" | "claridad",
       "severity": "alta" | "media" | "baja",
       "title": "título corto",
       "detail": "explicación clara en español, mencionando los títulos de las decisiones",
@@ -278,8 +338,8 @@ ${context}
 
     return raw
         .map((s: any): RadarSignal | null => {
-            const type: SignalType =
-                s.type === "contradiccion" ? "contradiccion" : "obsolescencia";
+            const allowedTypes: SignalType[] = ["contradiccion", "obsolescencia", "claridad"];
+            const type: SignalType = allowedTypes.includes(s.type) ? s.type : "obsolescencia";
             const severity: Severity = allowedSeverity.includes(s.severity)
                 ? s.severity
                 : "media";
