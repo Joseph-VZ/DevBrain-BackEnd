@@ -79,15 +79,26 @@ export const register = async (req: Request, res: Response) => {
             verificationUrl
         });
 
-        await sendMail({
-            to: email,
-            subject: verificationEmail.subject,
-            html: verificationEmail.html,
-            text: verificationEmail.text
-        });
+        // El envío del correo NO debe tumbar el registro: la cuenta ya se creó.
+        // Si el SMTP falla (p. ej. red en Render), lo registramos y seguimos.
+        let emailSent = true;
+        try {
+            await sendMail({
+                to: email,
+                subject: verificationEmail.subject,
+                html: verificationEmail.html,
+                text: verificationEmail.text
+            });
+        } catch (mailError) {
+            emailSent = false;
+            console.error("No se pudo enviar el correo de verificación:", mailError);
+        }
 
         return res.status(201).json({
-            message: "Registro exitoso. Revisa tu correo para verificar tu cuenta.",
+            message: emailSent
+                ? "Registro exitoso. Revisa tu correo para verificar tu cuenta."
+                : "Registro exitoso, pero no pudimos enviar el correo de verificación. Intenta reenviarlo más tarde.",
+            emailSent,
             user: {
                 id: result.rows[0].id,
                 name: result.rows[0].nombre,
