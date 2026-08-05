@@ -81,6 +81,7 @@ export const getKanban = async (
                 tk.prioridad,
                 tk.posicion,
                 tk.fecha_limite,
+                tk.decision_id,
                 tk.fecha_creacion,
                 tk.fecha_actualizacion,
                 u.nombre AS responsable_nombre,
@@ -116,6 +117,7 @@ export const getKanban = async (
                     priority: task.prioridad,
                     position: task.posicion,
                     dueDate: task.fecha_limite,
+                    decisionId: task.decision_id,
                     createdAt: task.fecha_creacion,
                     updatedAt: task.fecha_actualizacion,
                     assignee: task.responsable_id
