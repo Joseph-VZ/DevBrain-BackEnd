@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { obtenerPool } from "../config/database.js";
+import { createTaskForDecision } from "../services/kanbanBootstrap.js";
 
 /* =========================
    CREATE DECISION
@@ -170,6 +171,23 @@ export const createDecision = async (req: Request, res: Response) => {
         }
 
         await client.query("COMMIT");
+
+        // Crear automáticamente una tarea en el Kanban ("Pendiente") ligada a
+        // esta decisión. Best-effort: la decisión ya quedó guardada aunque
+        // esto falle, así que no rompemos la respuesta.
+        try {
+            await createTaskForDecision({
+                projectId: Number(projectId),
+                decisionId: decision.id,
+                userId,
+                title
+            });
+        } catch (kanbanError) {
+            console.error(
+                "No se pudo crear la tarea de Kanban para la decisión:",
+                kanbanError
+            );
+        }
 
         return res.status(201).json({
 

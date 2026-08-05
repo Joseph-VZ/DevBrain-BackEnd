@@ -1,5 +1,6 @@
 import { Request, Response } from "express";
 import { obtenerPool } from "../config/database.js";
+import { ensureDefaultColumns } from "../services/kanbanBootstrap.js";
 
 /* =========================
    GET PROJECTS
@@ -132,6 +133,13 @@ export const createProject = async (req: Request, res: Response) => {
             `,
             [userId, project.id]
         );
+
+        // Sembrar el tablero Kanban con las columnas por defecto (best-effort).
+        try {
+            await ensureDefaultColumns(project.id);
+        } catch (kanbanError) {
+            console.error("No se pudieron crear las columnas Kanban del proyecto:", kanbanError);
+        }
 
         return res.status(201).json({
             id: project.id,
