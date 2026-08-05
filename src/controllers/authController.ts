@@ -7,6 +7,7 @@ import {
     sendMail,
     buildVerificationEmail
 } from "../services/mailer.js";
+import { validateRegisterInput } from "../utils/validation.js";
 
 
 
@@ -17,12 +18,27 @@ export const register = async (req: Request, res: Response) => {
     try {
         const { name, email, password } = req.body;
 
+        // Validar antes de tocar la base de datos. El frontend valida lo mismo,
+        // pero cualquiera puede llamar a esta ruta sin pasar por el formulario.
+        const validationError = validateRegisterInput({ name, email, password });
+
+        if (validationError) {
+            return res.status(400).json({
+                error: validationError
+            });
+        }
+
+        const cleanName = (name as string).trim();
+        const cleanEmail = (email as string).trim();
+
         const pool = obtenerPool();
 
-        // Verificar si el correo ya existe
+        // Verificar si el correo ya existe.
+        // Se compara en minúsculas para que "Ana@x.com" y "ana@x.com" no puedan
+        // registrarse como dos cuentas distintas.
         const user = await pool.query(
-            "SELECT id FROM usuarios WHERE correo = $1",
-            [email]
+            "SELECT id FROM usuarios WHERE LOWER(correo) = LOWER($1)",
+            [cleanEmail]
         );
 
         if (user.rows.length > 0) {
@@ -60,8 +76,8 @@ export const register = async (req: Request, res: Response) => {
                 correo,
                 correo_verificado`,
             [
-                name,
-                email,
+                cleanName,
+                cleanEmail,
                 hash,
                 verificationToken,
                 verificationTokenExpires
@@ -75,7 +91,7 @@ export const register = async (req: Request, res: Response) => {
             `${frontendUrl}/verify-email/${verificationToken}`;
 
         const verificationEmail = buildVerificationEmail({
-            userName: name,
+            userName: cleanName,
             verificationUrl
         });
 
@@ -84,7 +100,7 @@ export const register = async (req: Request, res: Response) => {
         let emailSent = true;
         try {
             await sendMail({
-                to: email,
+                to: cleanEmail,
                 subject: verificationEmail.subject,
                 html: verificationEmail.html,
                 text: verificationEmail.text
@@ -183,11 +199,21 @@ export const login = async (req: Request, res: Response) => {
 
     const { email, password } = req.body;
 
+    // Sin estos campos no hay nada que comparar: bcrypt.compare rompería
+    // con undefined y la petición moriría sin respuesta.
+    if (typeof email !== "string" || typeof password !== "string" || !email.trim() || !password) {
+        return res.status(400).json({
+            error: "Correo y contraseña son obligatorios"
+        });
+    }
+
     const pool = obtenerPool();
 
+    // Comparación sin distinguir mayúsculas: el correo con el que te registraste
+    // y el que escribes al entrar deben valer igual.
     const result = await pool.query(
-        "SELECT * FROM usuarios WHERE correo = $1",
-        [email]
+        "SELECT * FROM usuarios WHERE LOWER(correo) = LOWER($1)",
+        [email.trim()]
     );
 
     if (result.rows.length === 0) {
